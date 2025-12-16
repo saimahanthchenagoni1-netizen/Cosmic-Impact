@@ -1,0 +1,5 @@
+{
+  "name": "Cosmic Impact Analyzer",
+  "description": "A high-fidelity physics application that uses dimensional analysis and AI reasoning to determine asteroid impact probability, composition, and kinetic energy scenarios.",
+  "requestFramePermissions": []
+}
