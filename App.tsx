@@ -4,7 +4,7 @@ import { DEFAULT_INPUT, ASTEROID_TYPES } from './constants';
 import { analyzeAsteroid } from './services/geminiService';
 import StarBackground from './components/StarBackground';
 import { ResultsDisplay } from './components/ResultsDisplay';
-import { Rocket, History as HistoryIcon, Calculator, ChevronRight, RefreshCw, X } from 'lucide-react';
+import { Rocket, History as HistoryIcon, Calculator, ChevronRight, RefreshCw, X, Key, Lock } from 'lucide-react';
 
 const App: React.FC = () => {
   const [input, setInput] = useState<AsteroidInput>(DEFAULT_INPUT);
@@ -12,6 +12,12 @@ const App: React.FC = () => {
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  
+  // API Key State - prioritizes local storage, then env var (for local dev), then empty
+  const [apiKey, setApiKey] = useState<string>(() => {
+    return localStorage.getItem('gemini_api_key') || process.env.API_KEY || '';
+  });
+  const [showKeyInput, setShowKeyInput] = useState(false);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -23,10 +29,17 @@ const App: React.FC = () => {
     }));
   };
 
+  const saveApiKey = (key: string) => {
+    setApiKey(key);
+    localStorage.setItem('gemini_api_key', key);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!process.env.API_KEY) {
-      alert("API Key is missing. Please restart the environment with a valid API Key.");
+    
+    if (!apiKey) {
+      setShowKeyInput(true);
+      alert("Please enter a Google Gemini API Key to proceed.");
       return;
     }
 
@@ -34,7 +47,7 @@ const App: React.FC = () => {
     setResult(null);
 
     try {
-      const data = await analyzeAsteroid(input);
+      const data = await analyzeAsteroid(input, apiKey);
       setResult(data);
       
       const newHistoryItem: HistoryItem = {
@@ -45,7 +58,12 @@ const App: React.FC = () => {
       
       setHistory(prev => [newHistoryItem, ...prev]);
     } catch (error) {
-      alert("Failed to analyze asteroid data. Please try again.");
+      console.error(error);
+      alert("Analysis failed. Please check your API Key and internet connection.");
+      // If error is likely due to key, show input
+      if (error instanceof Error && error.message.includes('API Key')) {
+         setShowKeyInput(true);
+      }
     } finally {
       setLoading(false);
     }
@@ -58,22 +76,22 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen text-white overflow-x-hidden">
+    <div className="min-h-screen text-white overflow-x-hidden font-sans">
       <StarBackground />
       
       {/* Mobile History Toggle */}
       <button 
         onClick={() => setIsSidebarOpen(true)}
-        className="fixed top-4 right-4 z-50 p-3 bg-slate-800/80 backdrop-blur rounded-full border border-slate-700 lg:hidden shadow-lg"
+        className="fixed top-4 right-4 z-50 p-3 bg-slate-800/80 backdrop-blur rounded-full border border-slate-700 lg:hidden shadow-lg hover:bg-slate-700 transition"
       >
         <HistoryIcon size={20} />
       </button>
 
-      {/* Sidebar History (Drawer on mobile, fixed on desktop) */}
-      <div className={`fixed inset-y-0 right-0 w-80 bg-slate-950/90 backdrop-blur-xl border-l border-slate-800 transform transition-transform duration-300 z-40 ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} lg:translate-x-0`}>
+      {/* Sidebar History */}
+      <div className={`fixed inset-y-0 right-0 w-80 bg-slate-950/95 backdrop-blur-xl border-l border-slate-800 transform transition-transform duration-300 z-50 ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} lg:translate-x-0`}>
         <div className="p-6 h-full flex flex-col">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-display font-bold text-purple-400">Analysis Logs</h2>
+            <h2 className="text-xl font-display font-bold text-purple-400">Mission Logs</h2>
             <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-slate-400 hover:text-white">
               <X size={24} />
             </button>
@@ -90,20 +108,30 @@ const App: React.FC = () => {
                 <button 
                   key={item.id}
                   onClick={() => loadHistoryItem(item)}
-                  className="w-full text-left p-4 rounded-xl bg-slate-900 border border-slate-800 hover:border-purple-500 hover:bg-slate-800 transition-all group"
+                  className="w-full text-left p-4 rounded-xl bg-slate-900 border border-slate-800 hover:border-purple-500 hover:bg-slate-800 transition-all group relative overflow-hidden"
                 >
-                  <div className="flex justify-between items-start mb-1">
+                  <div className="flex justify-between items-start mb-1 relative z-10">
                     <span className="font-bold text-white text-sm group-hover:text-purple-300">{item.input.name}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded ${item.result.isHit ? 'bg-red-900/50 text-red-400' : 'bg-emerald-900/50 text-emerald-400'}`}>
-                      {item.result.isHit ? 'HIT' : 'MISS'}
+                    <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${item.result.isHit ? 'bg-red-900/50 text-red-400' : 'bg-emerald-900/50 text-emerald-400'}`}>
+                      {item.result.isHit ? 'IMPACT' : 'MISS'}
                     </span>
                   </div>
-                  <div className="text-xs text-slate-500 font-mono">
+                  <div className="text-xs text-slate-500 font-mono relative z-10">
                      E: {item.result.kineticEnergyMegatons.toFixed(1)} MT
                   </div>
                 </button>
               ))
             )}
+          </div>
+          
+          <div className="pt-4 border-t border-slate-800">
+             <button 
+               onClick={() => setShowKeyInput(!showKeyInput)}
+               className="flex items-center gap-2 text-xs text-slate-500 hover:text-white transition-colors"
+             >
+               <Key size={14} />
+               <span>{apiKey ? 'Update API Key' : 'Set API Key'}</span>
+             </button>
           </div>
         </div>
       </div>
@@ -111,16 +139,32 @@ const App: React.FC = () => {
       {/* Main Content */}
       <div className="lg:mr-80 min-h-screen">
         <header className="pt-8 px-6 md:px-12 pb-6 border-b border-slate-800/50 bg-slate-950/30 sticky top-0 z-30 backdrop-blur-sm">
-          <div className="flex items-center gap-3">
-             <div className="p-3 bg-gradient-to-br from-purple-600 to-indigo-600 rounded-2xl shadow-lg shadow-purple-900/20">
-               <Rocket className="text-white" size={28} />
-             </div>
-             <div>
-               <h1 className="text-2xl md:text-3xl font-display font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white to-purple-200">
-                 COSMIC IMPACT
-               </h1>
-               <p className="text-xs text-purple-400 uppercase tracking-[0.2em] font-bold">Dimensional Analysis Engine</p>
-             </div>
+          <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
+            <div className="flex items-center gap-3">
+               <div className="p-3 bg-gradient-to-br from-purple-600 to-indigo-600 rounded-2xl shadow-lg shadow-purple-900/20">
+                 <Rocket className="text-white" size={28} />
+               </div>
+               <div>
+                 <h1 className="text-2xl md:text-3xl font-display font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white to-purple-200">
+                   COSMIC IMPACT
+                 </h1>
+                 <p className="text-xs text-purple-400 uppercase tracking-[0.2em] font-bold">Dimensional Analysis Engine</p>
+               </div>
+            </div>
+
+            {/* API Key Input Section (Visible if missing or toggled) */}
+            {(showKeyInput || !apiKey) && (
+              <div className="flex items-center gap-2 bg-slate-900/80 p-2 rounded-xl border border-slate-700 animate-fade-in w-full md:w-auto">
+                <Lock size={16} className="text-slate-400 ml-2" />
+                <input 
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => saveApiKey(e.target.value)}
+                  placeholder="Paste Gemini API Key"
+                  className="bg-transparent border-none focus:ring-0 text-sm text-white placeholder-slate-600 w-full md:w-64"
+                />
+              </div>
+            )}
           </div>
         </header>
 
@@ -128,7 +172,7 @@ const App: React.FC = () => {
           
           {/* Input Section */}
           <section className="mb-12">
-            <div className="bg-slate-900/40 border border-slate-800 rounded-3xl p-6 md:p-8 backdrop-blur-sm">
+            <div className="bg-slate-900/40 border border-slate-800 rounded-3xl p-6 md:p-8 backdrop-blur-sm shadow-2xl">
                <div className="flex items-center gap-2 mb-6 text-slate-300">
                  <Calculator size={20} />
                  <h2 className="text-lg font-display uppercase font-bold">Input Telemetry</h2>
@@ -143,7 +187,7 @@ const App: React.FC = () => {
                       name="name"
                       value={input.name}
                       onChange={handleInputChange}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all font-mono text-sm"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all font-mono text-sm text-white"
                       required
                     />
                   </div>
@@ -155,7 +199,7 @@ const App: React.FC = () => {
                       name="diameter"
                       value={input.diameter}
                       onChange={handleInputChange}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all font-mono text-sm"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all font-mono text-sm text-white"
                       min="1"
                       required
                     />
@@ -168,7 +212,7 @@ const App: React.FC = () => {
                       name="velocity"
                       value={input.velocity}
                       onChange={handleInputChange}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-pink-500 focus:ring-1 focus:ring-pink-500 transition-all font-mono text-sm"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-pink-500 focus:ring-1 focus:ring-pink-500 transition-all font-mono text-sm text-white"
                       min="0.1"
                       step="0.1"
                       required
@@ -182,7 +226,7 @@ const App: React.FC = () => {
                       name="distance"
                       value={input.distance}
                       onChange={handleInputChange}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all font-mono text-sm"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all font-mono text-sm text-white"
                       min="0"
                       required
                     />
@@ -194,7 +238,7 @@ const App: React.FC = () => {
                         name="type" 
                         value={input.type} 
                         onChange={handleInputChange}
-                        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all text-sm appearance-none cursor-pointer"
+                        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all text-sm appearance-none cursor-pointer text-white"
                      >
                        {ASTEROID_TYPES.map(type => (
                          <option key={type.value} value={type.value}>{type.label}</option>

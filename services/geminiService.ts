@@ -39,27 +39,44 @@ const ANALYSIS_SCHEMA: Schema = {
   required: ["isHit", "impactProbability", "kineticEnergyMegatons", "dimensionalProcess", "composition", "rawMarkdown"]
 };
 
-export const analyzeAsteroid = async (input: AsteroidInput): Promise<AnalysisResult> => {
-  // Initialize client lazily to avoid top-level process.env crashes in browser
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+export const analyzeAsteroid = async (input: AsteroidInput, apiKey: string): Promise<AnalysisResult> => {
+  if (!apiKey) throw new Error("API Key is required");
+
+  const ai = new GoogleGenAI({ apiKey: apiKey });
   const model = "gemini-2.5-flash";
   
+  // Explicit physics constants to ensure accuracy
   const prompt = `
-    Perform a rigorous dimensional analysis and impact assessment for an asteroid with the following parameters:
+    Perform a rigorous dimensional analysis and impact assessment for an asteroid.
+    
+    INPUT DATA:
     Name: ${input.name}
     Diameter: ${input.diameter} meters
     Velocity: ${input.velocity} km/s relative to Earth
     Distance: ${input.distance} km from Earth
     Type: ${input.type}
 
-    Task:
-    1. Estimate Mass based on type density (Stony~3000kg/m3, Metallic~8000kg/m3, Icy~1000kg/m3).
-    2. Calculate Kinetic Energy using E = 1/2 mv^2. Show unit conversions explicitly (km/s to m/s).
-    3. Convert Energy to Megatons of TNT (1 MT = 4.184 x 10^15 Joules).
-    4. Estimate Impact Probability. If distance < 50,000 km, assume High probability or Hit.
-    5. Break down the likely chemical composition based on the type.
+    REFERENCE CONSTANTS (Use these for calculation):
+    - Density (Stony): 2700 kg/m^3
+    - Density (Metallic): 8000 kg/m^3
+    - Density (Icy): 1000 kg/m^3
+    - Density (Carbonaceous): 1300 kg/m^3
+    - 1 Megaton TNT = 4.184 x 10^15 Joules
+    - Volume of Sphere = (4/3) * pi * (radius^3)
+
+    TASK:
+    1. Calculate Radius (Diameter / 2).
+    2. Calculate Volume (m^3).
+    3. Calculate Mass (kg) = Density * Volume.
+    4. Calculate Kinetic Energy (Joules) = 0.5 * Mass * (Velocity in m/s)^2. 
+       *IMPORTANT*: Convert Velocity from km/s to m/s (multiply by 1000) BEFORE squaring.
+    5. Convert Energy to Megatons (MT).
+    6. Estimate Impact Probability: If distance < 50,000 km, probability is > 90%.
     
-    Return a structured JSON response suitable for a dashboard, including a step-by-step "dimensionalProcess" array where you explicitly show unit cancellation (e.g., "17 km/s * (1000 m / 1 km)").
+    OUTPUT:
+    Return a structured JSON response.
+    In the "dimensionalProcess" array, you MUST show the full unit cancellation path.
+    Example format for step: "17 km/s * (1000 m / 1 km) = 17,000 m/s".
   `;
 
   try {
@@ -69,8 +86,8 @@ export const analyzeAsteroid = async (input: AsteroidInput): Promise<AnalysisRes
       config: {
         responseMimeType: "application/json",
         responseSchema: ANALYSIS_SCHEMA,
-        systemInstruction: "You are a NASA planetary defense expert. You are precise, scientific, but engaging. You strictly use Dimensional Analysis for all math.",
-        temperature: 0.2
+        systemInstruction: "You are a NASA planetary defense physics engine. You perform calculations with extreme precision. You always show your work.",
+        temperature: 0.1 // Low temperature for consistent math
       }
     });
 
