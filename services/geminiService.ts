@@ -1,8 +1,6 @@
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { AsteroidInput, AnalysisResult } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 const ANALYSIS_SCHEMA: Schema = {
   type: Type.OBJECT,
   properties: {
@@ -42,6 +40,8 @@ const ANALYSIS_SCHEMA: Schema = {
 };
 
 export const analyzeAsteroid = async (input: AsteroidInput): Promise<AnalysisResult> => {
+  // Initialize client lazily to avoid top-level process.env crashes in browser
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const model = "gemini-2.5-flash";
   
   const prompt = `
