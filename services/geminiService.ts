@@ -1,103 +1,189 @@
-import { GoogleGenAI, Type, Schema } from "@google/genai";
-import { AsteroidInput, AnalysisResult } from "../types";
+import { AsteroidInput, AnalysisResult, AsteroidType, DimensionalStep, CompositionElement } from "../types";
 
-const ANALYSIS_SCHEMA: Schema = {
-  type: Type.OBJECT,
-  properties: {
-    isHit: { type: Type.BOOLEAN, description: "Whether the asteroid is likely to hit Earth based on distance (assume hit if < 20000km for this simulation) or trajectory." },
-    impactProbability: { type: Type.NUMBER, description: "Probability of impact in percentage (0-100)." },
-    kineticEnergyMegatons: { type: Type.NUMBER, description: "Calculated Kinetic Energy in Megatons of TNT." },
-    craterSizeMeters: { type: Type.NUMBER, description: "Estimated crater diameter in meters." },
-    analysisSummary: { type: Type.STRING, description: "A brief, dramatic summary of the outcome." },
-    dimensionalProcess: {
-      type: Type.ARRAY,
-      description: "Step-by-step dimensional analysis showing unit cancellations.",
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          step: { type: Type.STRING },
-          equation: { type: Type.STRING, description: "The math equation used" },
-          explanation: { type: Type.STRING },
-          result: { type: Type.STRING, description: "The result of this step with units" }
-        }
-      }
-    },
-    composition: {
-      type: Type.ARRAY,
-      description: "Estimated chemical composition breakdown.",
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          element: { type: Type.STRING },
-          percentage: { type: Type.NUMBER },
-          fill: { type: Type.STRING, description: "Hex color code for the chart" }
-        }
-      }
-    },
-    rawMarkdown: { type: Type.STRING, description: "A detailed scientific explanation in Markdown format." }
-  },
-  required: ["isHit", "impactProbability", "kineticEnergyMegatons", "dimensionalProcess", "composition", "rawMarkdown"]
+// Physics Constants
+const DENSITY_MAP: Record<AsteroidType, number> = {
+  [AsteroidType.STONY]: 2700,      // kg/m^3 (S-Type)
+  [AsteroidType.METALLIC]: 7870,   // kg/m^3 (Iron)
+  [AsteroidType.ICY]: 1000,        // kg/m^3 (Water ice)
+  [AsteroidType.CARBONACEOUS]: 1300 // kg/m^3 (C-Type)
 };
 
-export const analyzeAsteroid = async (input: AsteroidInput, apiKey: string): Promise<AnalysisResult> => {
-  if (!apiKey) throw new Error("API Key is required");
+const TNT_JOULES = 4.184e15; // 1 Megaton TNT in Joules
+const EARTH_RADIUS_KM = 6371;
 
-  const ai = new GoogleGenAI({ apiKey: apiKey });
-  const model = "gemini-2.5-flash";
+/**
+ * Local Physics Engine
+ * Performs dimensional analysis and impact estimation without external APIs.
+ */
+export const analyzeAsteroid = async (input: AsteroidInput): Promise<AnalysisResult> => {
+  // Simulate computation time for UX pacing
+  await new Promise(resolve => setTimeout(resolve, 800));
+
+  // 1. Determine Constants
+  const density = DENSITY_MAP[input.type] || 2500;
   
-  // Explicit physics constants to ensure accuracy
-  const prompt = `
-    Perform a rigorous dimensional analysis and impact assessment for an asteroid.
-    
-    INPUT DATA:
-    Name: ${input.name}
-    Diameter: ${input.diameter} meters
-    Velocity: ${input.velocity} km/s relative to Earth
-    Distance: ${input.distance} km from Earth
-    Type: ${input.type}
+  // 2. Geometry Calculations (Dimensional Analysis: Length -> Volume)
+  const radius = input.diameter / 2;
+  const volume = (4 / 3) * Math.PI * Math.pow(radius, 3);
+  
+  // 3. Mass Derivation (Volume * Density -> Mass)
+  const mass = density * volume;
 
-    REFERENCE CONSTANTS (Use these for calculation):
-    - Density (Stony): 2700 kg/m^3
-    - Density (Metallic): 8000 kg/m^3
-    - Density (Icy): 1000 kg/m^3
-    - Density (Carbonaceous): 1300 kg/m^3
-    - 1 Megaton TNT = 4.184 x 10^15 Joules
-    - Volume of Sphere = (4/3) * pi * (radius^3)
+  // 4. Kinematics (Velocity Unit Conversion & Kinetic Energy)
+  const velocityMs = input.velocity * 1000; // km/s to m/s
+  const energyJoules = 0.5 * mass * Math.pow(velocityMs, 2);
+  const energyMt = energyJoules / TNT_JOULES;
 
-    TASK:
-    1. Calculate Radius (Diameter / 2).
-    2. Calculate Volume (m^3).
-    3. Calculate Mass (kg) = Density * Volume.
-    4. Calculate Kinetic Energy (Joules) = 0.5 * Mass * (Velocity in m/s)^2. 
-       *IMPORTANT*: Convert Velocity from km/s to m/s (multiply by 1000) BEFORE squaring.
-    5. Convert Energy to Megatons (MT).
-    6. Estimate Impact Probability: If distance < 50,000 km, probability is > 90%.
-    
-    OUTPUT:
-    Return a structured JSON response.
-    In the "dimensionalProcess" array, you MUST show the full unit cancellation path.
-    Example format for step: "17 km/s * (1000 m / 1 km) = 17,000 m/s".
-  `;
+  // 5. Impact Probability Logic
+  // Using a heuristic based on current distance vs safe orbital distance.
+  // Realistically, trajectory matters more, but for this simulation:
+  // - < 8,000 km (Atmosphere/LEO entry) = 100% Impact
+  // - 8,000 - 50,000 km (Gravity Well Capture Zone) = High Probability decay
+  // - > 50,000 km = Safe/Miss
+  let impactProb = 0;
+  let isHit = false;
 
-  try {
-    const response = await ai.models.generateContent({
-      model,
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: ANALYSIS_SCHEMA,
-        systemInstruction: "You are a NASA planetary defense physics engine. You perform calculations with extreme precision. You always show your work.",
-        temperature: 0.1 // Low temperature for consistent math
-      }
-    });
-
-    const text = response.text;
-    if (!text) throw new Error("No response from Gemini");
-    
-    const data = JSON.parse(text) as AnalysisResult;
-    return { ...data, timestamp: Date.now() };
-  } catch (error) {
-    console.error("Analysis failed:", error);
-    throw error;
+  if (input.distance < (EARTH_RADIUS_KM + 2000)) {
+    impactProb = 100;
+    isHit = true;
+  } else if (input.distance < 50000) {
+    // Linear decay from 100% at ~8000km to 0% at 50000km
+    const closeLimit = EARTH_RADIUS_KM + 2000;
+    const outerLimit = 50000;
+    const range = outerLimit - closeLimit;
+    const position = input.distance - closeLimit;
+    impactProb = 100 * (1 - (position / range));
+    isHit = impactProb > 60;
+  } else {
+    impactProb = 0;
+    isHit = false;
   }
+  
+  // Clean up probability number
+  impactProb = Math.max(0, Math.min(100, parseFloat(impactProb.toFixed(1))));
+
+  // 6. Crater Estimation (Transient crater diameter scaling law)
+  // D_t = 1.161 * (rho_i / rho_t)^(1/3) * L^0.78 * v^0.44 * g^-0.22
+  // Approximated: Crater is roughly 10-20x impactor size depending on energy.
+  // Using a more scientific scaling approximation:
+  const rho_i = density;
+  const rho_t = 2500; // Target density (Earth crust)
+  const L = input.diameter;
+  const v = velocityMs;
+  const g = 9.81;
+  
+  const term1 = Math.pow(rho_i / rho_t, 1/3);
+  const term2 = Math.pow(L, 0.78);
+  const term3 = Math.pow(v, 0.44);
+  const term4 = Math.pow(g, -0.22);
+  
+  const craterDiameter = 1.161 * term1 * term2 * term3 * term4;
+  
+  // 7. Generate Dimensional Process Steps (The "Show Your Work" part)
+  const steps: DimensionalStep[] = [
+    {
+      step: "Calculate Radius",
+      equation: `r = d / 2 = ${input.diameter} / 2`,
+      explanation: "Derive radius from diameter to determine spherical volume.",
+      result: `${radius.toFixed(2)} m`
+    },
+    {
+      step: "Calculate Volume",
+      equation: `V = (4/3) * π * r^3`,
+      explanation: "Compute volume of sphere.",
+      result: `${volume.toExponential(2)} m³`
+    },
+    {
+      step: "Derive Mass",
+      equation: `M = ρ * V`,
+      explanation: `Calculate mass using ${input.type} density (${density} kg/m³).`,
+      result: `${mass.toExponential(2)} kg`
+    },
+    {
+      step: "Velocity Conversion",
+      equation: `v_ms = v_km * 1000`,
+      explanation: "Convert km/s to m/s for standard Joule calculation.",
+      result: `${velocityMs.toLocaleString()} m/s`
+    },
+    {
+      step: "Kinetic Energy",
+      equation: `E_k = (1/2) * M * v^2`,
+      explanation: "Compute kinetic energy using classical mechanics.",
+      result: `${energyJoules.toExponential(2)} J`
+    },
+    {
+      step: "TNT Equivalent",
+      equation: `MT = E_k / 4.184e15`,
+      explanation: "Convert Joules to Megatons of TNT for impact context.",
+      result: `${energyMt.toFixed(2)} MT`
+    }
+  ];
+
+  // 8. Generate Composition Data
+  const composition = getComposition(input.type);
+
+  // 9. Generate Summary
+  const analysisSummary = generateSummary(input.name, isHit, energyMt, input.type, impactProb);
+
+  return {
+    isHit,
+    impactProbability: impactProb,
+    kineticEnergyMegatons: energyMt,
+    craterSizeMeters: craterDiameter,
+    analysisSummary,
+    dimensionalProcess: steps,
+    composition,
+    rawMarkdown: "Generated via Local Physics Engine.",
+    timestamp: Date.now()
+  };
 };
+
+function getComposition(type: AsteroidType): CompositionElement[] {
+    switch (type) {
+        case AsteroidType.STONY:
+            return [
+                { element: 'Silicates', percentage: 70, fill: '#a8a29e' },
+                { element: 'Iron/Nickel', percentage: 15, fill: '#94a3b8' },
+                { element: 'Pyroxene', percentage: 10, fill: '#d6d3d1' },
+                { element: 'Olivine', percentage: 5, fill: '#86efac' }
+            ];
+        case AsteroidType.METALLIC:
+             return [
+                { element: 'Iron', percentage: 85, fill: '#64748b' },
+                { element: 'Nickel', percentage: 14, fill: '#cbd5e1' },
+                { element: 'Iridium', percentage: 1, fill: '#f1f5f9' }
+            ];
+        case AsteroidType.ICY:
+             return [
+                { element: 'Water Ice', percentage: 60, fill: '#bfdbfe' },
+                { element: 'CO2 Ice', percentage: 20, fill: '#e0f2fe' },
+                { element: 'Dust', percentage: 15, fill: '#7dd3fc' },
+                { element: 'Organics', percentage: 5, fill: '#0ea5e9' }
+            ];
+        case AsteroidType.CARBONACEOUS:
+             return [
+                { element: 'Carbon', percentage: 45, fill: '#475569' },
+                { element: 'Water', percentage: 20, fill: '#334155' },
+                { element: 'Silicates', percentage: 25, fill: '#94a3b8' },
+                { element: 'Sulfides', percentage: 10, fill: '#fbbf24' }
+            ];
+        default:
+            return [];
+    }
+}
+
+function generateSummary(name: string, isHit: boolean, energy: number, type: string, prob: number): string {
+    const energyStr = energy < 1 ? "Local Damage" : energy < 100 ? "Regional Destruction" : energy < 10000 ? "Continental Catastrophe" : "Extinction Event";
+    const status = isHit ? "CRITICAL: IMPACT TRAJECTORY CONFIRMED." : "SAFE: NO INTERSECTION DETECTED.";
+    
+    return `PHYSICS ENGINE REPORT // TARGET: ${name.toUpperCase()}
+    
+    CLASSIFICATION: ${type}
+    TRAJECTORY ANALYSIS: ${prob}% Probability of Impact.
+    STATUS: ${status}
+    
+    KINETIC YIELD: ~${energy.toLocaleString(undefined, {maximumFractionDigits: 2})} Megatons.
+    THREAT LEVEL: ${energyStr.toUpperCase()}.
+    
+    Dimensional analysis verifies mass-velocity integration. All constants valid.`;
+}

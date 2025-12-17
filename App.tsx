@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { AsteroidInput, AnalysisResult, HistoryItem } from './types';
 import { DEFAULT_INPUT, ASTEROID_TYPES } from './constants';
 import { analyzeAsteroid } from './services/geminiService';
 import StarBackground from './components/StarBackground';
 import { ResultsDisplay } from './components/ResultsDisplay';
-import { Rocket, History as HistoryIcon, Calculator, ChevronRight, RefreshCw, X, Key, Lock } from 'lucide-react';
+import { Rocket, History as HistoryIcon, Calculator, ChevronRight, RefreshCw, X, Cpu } from 'lucide-react';
 
 const App: React.FC = () => {
   const [input, setInput] = useState<AsteroidInput>(DEFAULT_INPUT);
@@ -12,12 +12,6 @@ const App: React.FC = () => {
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  
-  // API Key State - prioritizes local storage, then env var (for local dev), then empty
-  const [apiKey, setApiKey] = useState<string>(() => {
-    return localStorage.getItem('gemini_api_key') || process.env.API_KEY || '';
-  });
-  const [showKeyInput, setShowKeyInput] = useState(false);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -29,25 +23,14 @@ const App: React.FC = () => {
     }));
   };
 
-  const saveApiKey = (key: string) => {
-    setApiKey(key);
-    localStorage.setItem('gemini_api_key', key);
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!apiKey) {
-      setShowKeyInput(true);
-      alert("Please enter a Google Gemini API Key to proceed.");
-      return;
-    }
-
     setLoading(true);
     setResult(null);
 
     try {
-      const data = await analyzeAsteroid(input, apiKey);
+      // Direct call to local physics engine - No API Key needed
+      const data = await analyzeAsteroid(input);
       setResult(data);
       
       const newHistoryItem: HistoryItem = {
@@ -59,11 +42,7 @@ const App: React.FC = () => {
       setHistory(prev => [newHistoryItem, ...prev]);
     } catch (error) {
       console.error(error);
-      alert("Analysis failed. Please check your API Key and internet connection.");
-      // If error is likely due to key, show input
-      if (error instanceof Error && error.message.includes('API Key')) {
-         setShowKeyInput(true);
-      }
+      alert("Physics engine computation error.");
     } finally {
       setLoading(false);
     }
@@ -91,7 +70,7 @@ const App: React.FC = () => {
       <div className={`fixed inset-y-0 right-0 w-80 bg-slate-950/95 backdrop-blur-xl border-l border-slate-800 transform transition-transform duration-300 z-50 ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} lg:translate-x-0`}>
         <div className="p-6 h-full flex flex-col">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-display font-bold text-purple-400">Mission Logs</h2>
+            <h2 className="text-xl font-display font-bold text-cyan-400">Mission Logs</h2>
             <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-slate-400 hover:text-white">
               <X size={24} />
             </button>
@@ -108,10 +87,10 @@ const App: React.FC = () => {
                 <button 
                   key={item.id}
                   onClick={() => loadHistoryItem(item)}
-                  className="w-full text-left p-4 rounded-xl bg-slate-900 border border-slate-800 hover:border-purple-500 hover:bg-slate-800 transition-all group relative overflow-hidden"
+                  className="w-full text-left p-4 rounded-xl bg-slate-900 border border-slate-800 hover:border-cyan-500 hover:bg-slate-800 transition-all group relative overflow-hidden"
                 >
                   <div className="flex justify-between items-start mb-1 relative z-10">
-                    <span className="font-bold text-white text-sm group-hover:text-purple-300">{item.input.name}</span>
+                    <span className="font-bold text-white text-sm group-hover:text-cyan-300">{item.input.name}</span>
                     <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${item.result.isHit ? 'bg-red-900/50 text-red-400' : 'bg-emerald-900/50 text-emerald-400'}`}>
                       {item.result.isHit ? 'IMPACT' : 'MISS'}
                     </span>
@@ -123,16 +102,6 @@ const App: React.FC = () => {
               ))
             )}
           </div>
-          
-          <div className="pt-4 border-t border-slate-800">
-             <button 
-               onClick={() => setShowKeyInput(!showKeyInput)}
-               className="flex items-center gap-2 text-xs text-slate-500 hover:text-white transition-colors"
-             >
-               <Key size={14} />
-               <span>{apiKey ? 'Update API Key' : 'Set API Key'}</span>
-             </button>
-          </div>
         </div>
       </div>
 
@@ -141,30 +110,21 @@ const App: React.FC = () => {
         <header className="pt-8 px-6 md:px-12 pb-6 border-b border-slate-800/50 bg-slate-950/30 sticky top-0 z-30 backdrop-blur-sm">
           <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
             <div className="flex items-center gap-3">
-               <div className="p-3 bg-gradient-to-br from-purple-600 to-indigo-600 rounded-2xl shadow-lg shadow-purple-900/20">
+               <div className="p-3 bg-gradient-to-br from-cyan-600 to-blue-600 rounded-2xl shadow-lg shadow-cyan-900/20">
                  <Rocket className="text-white" size={28} />
                </div>
                <div>
-                 <h1 className="text-2xl md:text-3xl font-display font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white to-purple-200">
+                 <h1 className="text-2xl md:text-3xl font-display font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white to-cyan-200">
                    COSMIC IMPACT
                  </h1>
-                 <p className="text-xs text-purple-400 uppercase tracking-[0.2em] font-bold">Dimensional Analysis Engine</p>
+                 <p className="text-xs text-cyan-400 uppercase tracking-[0.2em] font-bold">Physics Engine v1.0</p>
                </div>
             </div>
-
-            {/* API Key Input Section (Visible if missing or toggled) */}
-            {(showKeyInput || !apiKey) && (
-              <div className="flex items-center gap-2 bg-slate-900/80 p-2 rounded-xl border border-slate-700 animate-fade-in w-full md:w-auto">
-                <Lock size={16} className="text-slate-400 ml-2" />
-                <input 
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => saveApiKey(e.target.value)}
-                  placeholder="Paste Gemini API Key"
-                  className="bg-transparent border-none focus:ring-0 text-sm text-white placeholder-slate-600 w-full md:w-64"
-                />
-              </div>
-            )}
+            
+            <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-slate-900/50 rounded-full border border-slate-700 text-xs text-slate-400">
+                <Cpu size={14} />
+                <span>Local Computation Ready</span>
+            </div>
           </div>
         </header>
 
@@ -172,13 +132,16 @@ const App: React.FC = () => {
           
           {/* Input Section */}
           <section className="mb-12">
-            <div className="bg-slate-900/40 border border-slate-800 rounded-3xl p-6 md:p-8 backdrop-blur-sm shadow-2xl">
-               <div className="flex items-center gap-2 mb-6 text-slate-300">
+            <div className="bg-slate-900/40 border border-slate-800 rounded-3xl p-6 md:p-8 backdrop-blur-sm shadow-2xl relative overflow-hidden">
+               {/* Decorative background element */}
+               <div className="absolute -top-20 -right-20 w-64 h-64 bg-cyan-500/5 rounded-full blur-3xl"></div>
+               
+               <div className="flex items-center gap-2 mb-6 text-slate-300 relative z-10">
                  <Calculator size={20} />
                  <h2 className="text-lg font-display uppercase font-bold">Input Telemetry</h2>
                </div>
 
-               <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+               <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 relative z-10">
                   
                   <div className="space-y-2">
                     <label className="text-xs text-slate-500 uppercase font-bold ml-1">Asteroid Name</label>
@@ -187,7 +150,7 @@ const App: React.FC = () => {
                       name="name"
                       value={input.name}
                       onChange={handleInputChange}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all font-mono text-sm text-white"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all font-mono text-sm text-white"
                       required
                     />
                   </div>
@@ -212,7 +175,7 @@ const App: React.FC = () => {
                       name="velocity"
                       value={input.velocity}
                       onChange={handleInputChange}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-pink-500 focus:ring-1 focus:ring-pink-500 transition-all font-mono text-sm text-white"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all font-mono text-sm text-white"
                       min="0.1"
                       step="0.1"
                       required
@@ -226,7 +189,7 @@ const App: React.FC = () => {
                       name="distance"
                       value={input.distance}
                       onChange={handleInputChange}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all font-mono text-sm text-white"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all font-mono text-sm text-white"
                       min="0"
                       required
                     />
@@ -238,7 +201,7 @@ const App: React.FC = () => {
                         name="type" 
                         value={input.type} 
                         onChange={handleInputChange}
-                        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all text-sm appearance-none cursor-pointer text-white"
+                        className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all text-sm appearance-none cursor-pointer text-white"
                      >
                        {ASTEROID_TYPES.map(type => (
                          <option key={type.value} value={type.value}>{type.label}</option>
@@ -250,16 +213,16 @@ const App: React.FC = () => {
                     <button 
                       type="submit" 
                       disabled={loading}
-                      className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3.5 px-6 rounded-xl shadow-lg shadow-purple-900/40 transition-all transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold py-3.5 px-6 rounded-xl shadow-lg shadow-cyan-900/40 transition-all transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
                       {loading ? (
                         <>
                           <RefreshCw className="animate-spin" size={20} />
-                          <span>Processing Physics...</span>
+                          <span>Calculating Physics...</span>
                         </>
                       ) : (
                         <>
-                          <span>Run Analysis</span>
+                          <span>Engage Analysis</span>
                           <ChevronRight size={20} />
                         </>
                       )}
